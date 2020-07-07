@@ -8,13 +8,15 @@ import (
 	homie "github.com/jbonachera/homie-go/homie"
 )
 
-type lockProvider struct{}
+type lockProvider struct {
+	conn *dbus.Conn
+}
 
 func (l *lockProvider) Register(device homie.Device) {
 	systemBus, err := dbus.ConnectSystemBus()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to connect to system bus:", err)
-		os.Exit(1)
+		return
 	}
 	c := make(chan *dbus.Signal, 0)
 	if err = systemBus.AddMatchSignal(

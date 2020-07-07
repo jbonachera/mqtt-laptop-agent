@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/jpeg"
 	"log"
@@ -40,10 +41,10 @@ var supportedFormats = map[webcam.PixelFormat]bool{
 	V4L2_PIX_FMT_YUYV: true,
 }
 
-func Capturer(cb func([]byte)) {
+func Capturer(limit int, cb func([]byte)) error {
 	cam, err := webcam.Open("/dev/video0") // Open webcam
 	if err != nil {
-		log.Fatal("failed to open webcam", err)
+		return errors.New("failed to open webcam")
 	}
 	defer cam.Close()
 	frames := FrameSizes(cam.GetSupportedFrameSizes(V4L2_PIX_FMT_YUYV))
@@ -51,18 +52,17 @@ func Capturer(cb func([]byte)) {
 	var size *webcam.FrameSize
 	size = &frames[len(frames)-1]
 	if size == nil {
-		log.Fatal("No matching frame size, exiting")
-		return
+		return errors.New("No matching frame size, exiting")
 	}
 
 	_, w, h, err := cam.SetImageFormat(V4L2_PIX_FMT_YUYV, uint32(size.MaxWidth), uint32(size.MaxHeight))
 	if err != nil {
-		log.Fatal("SetImageFormat return error, ", err)
-		return
-
+		return errors.New("SetImageFormat return error")
 	}
 	err = cam.StartStreaming()
+	count := 0
 	for {
+		count++
 		err = cam.WaitForFrame(5000)
 
 		switch err.(type) {
@@ -75,6 +75,9 @@ func Capturer(cb func([]byte)) {
 
 		frame, err := cam.ReadFrame()
 		if len(frame) != 0 {
+			if count < 3 {
+				continue
+			}
 			yuyv := image.NewYCbCr(image.Rect(0, 0, int(w), int(h)), image.YCbCrSubsampleRatio422)
 			for i := range yuyv.Cb {
 				ii := i * 4
@@ -86,26 +89,33 @@ func Capturer(cb func([]byte)) {
 			}
 			buf := &bytes.Buffer{}
 			if err := jpeg.Encode(buf, yuyv, &jpeg.Options{Quality: 80}); err != nil {
-				log.Fatal(err)
-				return
+				return err
 			}
 			cb(buf.Bytes())
 		} else if err != nil {
-			panic(err.Error())
+			return err
 		}
-		return
+		if limit > 0 && limit+3 >= count {
+			return nil
+		}
 	}
 }
 
 type webcamProvider struct{}
 
 func (w *webcamProvider) RegisterNode(device homie.Device) {
+	var v string
+	err := Capturer(1, func(b []byte) {
+		v = string(b)
+	})
+	if err != nil {
+		log.Print(err)
+		return
+	}
 	node := device.NewNode("webcam", "camera")
 	trigger := make(chan struct{}, 1)
 	frame := node.NewProperty("frame", "jpeg")
-	Capturer(func(b []byte) {
-		frame.SetValue(string(b))
-	})
+	frame.SetValue(v)
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		for {
@@ -113,7 +123,7 @@ func (w *webcamProvider) RegisterNode(device homie.Device) {
 			case <-ticker.C:
 			case <-trigger:
 			}
-			Capturer(func(b []byte) {
+			Capturer(1, func(b []byte) {
 				frame.SetValue(string(b)).Publish()
 			})
 		}

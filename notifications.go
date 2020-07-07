@@ -23,12 +23,14 @@ func NewNotificationsProvider() *notificationsProvider {
 	sessionBus, err := dbus.ConnectSessionBus()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to connect to session bus:", err)
-		os.Exit(1)
 	}
 	return &notificationsProvider{conn: sessionBus}
 }
 
 func (n *notificationsProvider) Register(device homie.Device) {
+	if n.conn == nil {
+		return
+	}
 	notifications := device.NewNode("notifications", "Notifications")
 	message := notifications.NewProperty("message", "string")
 	message.SetHandler(func(p homie.Property, payload []byte, topic string) (bool, error) {
@@ -37,5 +39,8 @@ func (n *notificationsProvider) Register(device homie.Device) {
 	})
 }
 func (n *notificationsProvider) Notify(msg string) {
+	if n.conn == nil {
+		return
+	}
 	notify(n.conn, msg)
 }

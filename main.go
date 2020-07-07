@@ -17,11 +17,12 @@ func main() {
 	config.SetConfigName("config")
 	cmd := cobra.Command{
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			config.BindEnv()
 			config.BindPFlags(cmd.Flags())
 			config.BindPFlags(cmd.PersistentFlags())
 			if err := config.ReadInConfig(); err != nil {
 				if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-					log.Fatal(err)
+					log.Printf("failed to load config: %v", err)
 				}
 			}
 		},
