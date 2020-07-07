@@ -152,6 +152,12 @@ func main() {
 					URL:      config.GetString("mqtt.broker"),
 					Username: config.GetString("mqtt.username"),
 					Password: config.GetString("mqtt.password"),
+					OnConnect: func() {
+						notify(sessionBus, "connected")
+					},
+					OnConnectionLost: func(err error) {
+						notify(sessionBus, fmt.Sprintf("connection lost: %v", err))
+					},
 				},
 				BaseTopic:           "devices/",
 				StatsReportInterval: 60,
@@ -209,8 +215,6 @@ func main() {
 				}
 				return true, nil
 			})
-			notify(sessionBus, "mqtt agent started")
-			device.Run(false)
 			go func() {
 				for event := range c {
 					if len(event.Body) >= 2 {
@@ -223,6 +227,14 @@ func main() {
 					}
 				}
 			}()
+			for {
+				err := device.Connect()
+				if err == nil {
+					break
+				}
+				notify(sessionBus, fmt.Sprintf("connection failed: %v", err))
+				<-time.After(3 * time.Second)
+			}
 			select {}
 		},
 	}
