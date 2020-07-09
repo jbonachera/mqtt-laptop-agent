@@ -1,44 +1,41 @@
-package main
+package logind
 
 import (
 	"fmt"
-	"os"
+	"log"
 
 	dbus "github.com/godbus/dbus"
 	homie "github.com/jbonachera/homie-go/homie"
 )
 
-type lockProvider struct {
-	conn *dbus.Conn
-}
-
-func (l *lockProvider) Register(device homie.Device) {
-	systemBus, err := dbus.ConnectSystemBus()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to connect to system bus:", err)
-		return
-	}
-	c := make(chan *dbus.Signal, 0)
-	if err = systemBus.AddMatchSignal(
+func lockProperty(node homie.Node, conn *dbus.Conn) {
+	if err := conn.AddMatchSignal(
 		dbus.WithMatchInterface("org.freedesktop.DBus.Properties"),
 	); err != nil {
 		panic(err)
 	}
-	obj := systemBus.Object("org.freedesktop.login1", "/org/freedesktop/login1")
-	lockscreen := device.NewNode("lockscreen", "Lock")
-	lock := lockscreen.NewProperty("lock", "bool")
-	lock.SetValue("false")
+	obj := conn.Object("org.freedesktop.login1", "/org/freedesktop/login1/session/self")
+
+	lock := node.NewProperty("lock", "bool")
+
+	result, err := obj.GetProperty("org.freedesktop.login1.Session.LockedHint")
+	if err != nil {
+		log.Print(err)
+	} else {
+		lock.SetValue(fmt.Sprintf("%v", result.Value().(bool)))
+	}
 
 	lock.SetHandler(func(p homie.Property, payload []byte, topic string) (bool, error) {
 		if string(payload) == "true" {
-			obj.Call("org.freedesktop.login1.Manager.LockSessions", 0).Store(nil)
+			obj.Call("org.freedesktop.login1.Session.Lock", 0).Store(nil)
 		} else {
-			obj.Call("org.freedesktop.login1.Manager.UnlockSessions", 0).Store(nil)
+			obj.Call("org.freedesktop.login1.Session.Unlock", 0).Store(nil)
 		}
 		return true, nil
 	})
+	c := make(chan *dbus.Signal, 0)
 
-	systemBus.Signal(c)
+	conn.Signal(c)
 
 	go func() {
 		for event := range c {

@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"log"
+	"os"
+	"os/exec"
 	"sort"
 	"time"
 
@@ -41,10 +44,22 @@ var supportedFormats = map[webcam.PixelFormat]bool{
 	V4L2_PIX_FMT_YUYV: true,
 }
 
-func Capturer(limit int, cb func([]byte)) error {
-	cam, err := webcam.Open("/dev/video0") // Open webcam
+func (provider *webcamProvider) Capturer(limit int, cb func([]byte)) error {
+	cam, err := webcam.Open(provider.path) // Open webcam
 	if err != nil {
-		return errors.New("failed to open webcam")
+		if _, err := os.Stat("/system/sdcard/bin/getimage"); err == nil {
+			cmd := exec.Command("/system/sdcard/bin/getimage")
+			out := bytes.NewBuffer(nil)
+			cmd.Stdout = out
+			if err := cmd.Run(); err == nil {
+				cb(out.Bytes())
+				return nil
+			}
+			log.Println(err)
+		} else {
+			log.Println(err)
+		}
+		return fmt.Errorf("failed to open webcam: %v", err)
 	}
 	defer cam.Close()
 	frames := FrameSizes(cam.GetSupportedFrameSizes(V4L2_PIX_FMT_YUYV))
@@ -101,11 +116,13 @@ func Capturer(limit int, cb func([]byte)) error {
 	}
 }
 
-type webcamProvider struct{}
+type webcamProvider struct {
+	path string
+}
 
 func (w *webcamProvider) RegisterNode(device homie.Device) {
 	var v string
-	err := Capturer(1, func(b []byte) {
+	err := w.Capturer(1, func(b []byte) {
 		v = string(b)
 	})
 	if err != nil {
@@ -123,7 +140,7 @@ func (w *webcamProvider) RegisterNode(device homie.Device) {
 			case <-ticker.C:
 			case <-trigger:
 			}
-			Capturer(1, func(b []byte) {
+			w.Capturer(1, func(b []byte) {
 				frame.SetValue(string(b)).Publish()
 			})
 		}

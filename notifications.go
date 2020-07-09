@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	dbus "github.com/godbus/dbus"
@@ -23,6 +24,7 @@ func NewNotificationsProvider() *notificationsProvider {
 	sessionBus, err := dbus.ConnectSessionBus()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to connect to session bus:", err)
+		return &notificationsProvider{}
 	}
 	return &notificationsProvider{conn: sessionBus}
 }
@@ -39,6 +41,7 @@ func (n *notificationsProvider) Register(device homie.Device) {
 	})
 }
 func (n *notificationsProvider) Notify(msg string) {
+	log.Println(msg)
 	if n.conn == nil {
 		return
 	}

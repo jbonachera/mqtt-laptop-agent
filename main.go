@@ -6,6 +6,8 @@ import (
 	"time"
 
 	homie "github.com/jbonachera/homie-go/homie"
+	"github.com/jbonachera/mqtt-laptop-agent/logind"
+	"github.com/jbonachera/mqtt-laptop-agent/upower"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,9 +23,7 @@ func main() {
 			config.BindPFlags(cmd.Flags())
 			config.BindPFlags(cmd.PersistentFlags())
 			if err := config.ReadInConfig(); err != nil {
-				if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-					log.Printf("failed to load config: %v", err)
-				}
+				log.Printf("failed to load config: %v", err)
 			}
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -45,19 +45,25 @@ func main() {
 				BaseTopic:           "devices/",
 				StatsReportInterval: 60,
 			})
+			notificationsProvider.Register(device)
+			logind.NewLogindProvider().Serve(device.NewNode("logind", "logind"))
+			upower.NewUpowerProvider().Serve(device.NewNode("upower", "upower"))
 
-			webcam := &webcamProvider{}
+			webcam := &webcamProvider{path: config.GetString("webcam-path")}
 			webcam.RegisterNode(device)
 			for {
+				log.Printf("attempting to connect to %s", config.GetString("mqtt.broker"))
 				err := device.Connect()
 				if err == nil {
 					break
 				}
-				notificationsProvider.Notify(fmt.Sprintf("connection failed: %v", err))
+				msg := fmt.Sprintf("connection failed: %v", err)
+				notificationsProvider.Notify(msg)
 				<-time.After(3 * time.Second)
 			}
 			select {}
 		},
 	}
+	cmd.Flags().String("webcam-path", "/dev/video0", "")
 	cmd.Execute()
 }
