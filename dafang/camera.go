@@ -35,7 +35,7 @@ type webcamProvider struct {
 	path string
 }
 
-func cameraProperty(externalTrigger chan struct{}, node homie.Node) {
+func cameraProperty(arm, disarm chan struct{}, externalTrigger chan struct{}, node homie.Node) {
 	v, err := capture()
 	if err != nil {
 		log.Print(err)
@@ -45,19 +45,25 @@ func cameraProperty(externalTrigger chan struct{}, node homie.Node) {
 	frame := node.NewProperty("frame", "jpeg")
 	frame.SetValue(string(v))
 	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
+		disabled := false
+		ticker := time.NewTicker(30 * time.Second)
 		for {
 			select {
+			case <-arm:
+				disabled = false
+			case <-disarm:
+				disabled = true
 			case <-ticker.C:
 			case <-trigger:
 			case <-externalTrigger:
 			}
-			v, err := capture()
-			if err != nil {
-				log.Print(err)
-				return
+			if !disabled && node.Device() != nil && node.Device().Client() != nil && node.Device().Client().IsConnected() {
+				v, err := capture()
+				if err != nil {
+					log.Print(err)
+				}
+				frame.SetValue(string(v)).Publish()
 			}
-			frame.SetValue(string(v)).Publish()
 		}
 	}()
 
