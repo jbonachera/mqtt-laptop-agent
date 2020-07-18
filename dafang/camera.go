@@ -46,7 +46,7 @@ func cameraProperty(arm, disarm chan struct{}, externalTrigger chan struct{}, no
 	frame.SetValue(string(v))
 	go func() {
 		disabled := false
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(2 * time.Hour)
 		for {
 			select {
 			case <-arm:
